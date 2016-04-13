@@ -1,0 +1,2 @@
+# SuperSimpleStocks
+SuperSimpleStocks Demo exercise
