@@ -1,18 +1,15 @@
 package main.java;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
 
-import main.java.dto.CommonStock;
-import main.java.dto.PreferredStock;
-import main.java.dto.Trade;
-import main.java.impl.AbstractStock;
+import main.java.bo.Trade;
+import main.java.bo.impl.AbstractStock;
+import main.java.exceptions.SuperSimpleStocksException;
+import main.java.model.ValueLoader;
+import main.java.view.Screen;
 
 /**
  * GBCE All Share Index demo exercise.
@@ -26,6 +23,8 @@ class SuperSimpleStocks {
 	private static String				lastError		= "";
 	private static String				resultMessage	= "";
 	private static ResourceBundle		textBundle		= null;
+	private static final Screen			userScreen		= new Screen();
+	private static final ValueLoader	loader			= new ValueLoader();
 
 	public static void main(String[] args) {
 		initializeTextBundle();
@@ -42,14 +41,10 @@ class SuperSimpleStocks {
 	}
 
 	/**
-	 * Loads a set of start values.
+	 * Loads the demo start values.
 	 */
 	private static void loadValues() {
-		stockList.add(new CommonStock("TEA", 0, 100));
-		stockList.add(new CommonStock("POP", 8, 100));
-		stockList.add(new CommonStock("ALE", 23, 60));
-		stockList.add(new PreferredStock("GIN", 8, 2, 100));
-		stockList.add(new CommonStock("JOE", 13, 250));
+		stockList = loader.loadDummyValues();
 	}
 
 	/**
@@ -58,54 +53,67 @@ class SuperSimpleStocks {
 	private static void startMenu() {
 		boolean exit = false;
 		try {
-			clearScreen();
+			userScreen.clearScreen();
 			while (!exit) {
-				showWelcome();
-				String input = readConsoleLine();
+				userScreen.showWelcome(lastError, resultMessage);
+				resultMessage = "";
+				String input = userScreen.readConsoleLine();
 				lastError = checkOptionValid(input, 1, 6);
-				clearScreen();
+				userScreen.clearScreen();
 				if (lastError.isEmpty()) {
-					int option = Integer.parseInt(input);
-					if (option == 5) {
-						resultMessage = showAllShareIndex();
-					} else if (option == 6) {
-						closeProgram(textBundle.getString("close.ok"));
-					} else {
-						AbstractStock selectedStock = selectStock();
-						if (selectedStock != null) {
-							switch (option) {
-							case 1:
-								resultMessage = String.format(
-										textBundle.getString("dividend.yield"),
-										selectedStock.getSymbol(),
-										selectedStock.getDividendYield());
-								break;
-							case 2:
-								resultMessage = String.format(
-										textBundle.getString("pe.ratio"),
-										selectedStock.getSymbol(),
-										selectedStock.getPERatio());
-								break;
-							case 3:
-								resultMessage = recordTrade(selectedStock);
-								break;
-							case 4:
-								resultMessage = String.format(textBundle
-										.getString("stock.price"),
-										selectedStock.getSymbol(),
-										selectedStock
-												.getStockPrice(TICKER_TIME));
-								break;
-							default:
-								break;
-							}
-							clearScreen();
-						}
-					}
+					processOption(input);
 				}
 			}
-		} catch (InterruptedException | IOException e) {
-			closeProgram(textBundle.getString("close.error"));
+		} catch (SuperSimpleStocksException e) {
+			closeProgram(e.getMessage());
+		}
+	}
+
+	/**
+	 * Processes valid user input.
+	 * 
+	 * @param input
+	 *            String The option selected by the user.
+	 * @throws SuperSimpleStocksException
+	 *             When an exception occurs.
+	 */
+	private static void processOption(String input)
+			throws SuperSimpleStocksException {
+		int option = Integer.parseInt(input);
+		if (option == 5) {
+			resultMessage = showAllShareIndex();
+		} else if (option == 6) {
+			closeProgram(textBundle.getString("close.ok"));
+		} else {
+			AbstractStock selectedStock = selectStock();
+			if (selectedStock != null) {
+				switch (option) {
+				case 1:
+					resultMessage = String.format(
+							textBundle.getString("dividend.yield"),
+							selectedStock.getSymbol(),
+							selectedStock.getDividendYield());
+					break;
+				case 2:
+					resultMessage = String.format(
+							textBundle.getString("pe.ratio"),
+							selectedStock.getSymbol(),
+							selectedStock.getPERatio());
+					break;
+				case 3:
+					resultMessage = recordTrade(selectedStock);
+					break;
+				case 4:
+					resultMessage = String.format(
+							textBundle.getString("stock.price"),
+							selectedStock.getSymbol(),
+							selectedStock.getStockPrice(TICKER_TIME));
+					break;
+				default:
+					break;
+				}
+				userScreen.clearScreen();
+			}
 		}
 	}
 
@@ -137,47 +145,34 @@ class SuperSimpleStocks {
 	 *            will be recorded.
 	 * @return String A string containing the errors detected on insertion or
 	 *         the successful message.
-	 * @throws InterruptedException
-	 *             When input can't be read of the console or screen can't be
-	 *             cleared.
-	 * @throws IOException
-	 *             When input can't be read of the console or screen can't be
-	 *             cleared.
+	 * @throws SuperSimpleStocksException
+	 *             When an exception occurs.
 	 */
 	private static String recordTrade(final AbstractStock selectedStock)
-			throws InterruptedException, IOException {
+			throws SuperSimpleStocksException {
 		String error = "";
 		List<String> errors = new LinkedList<String>();
-		String shares = "";
-		String price = "";
-		String buyOrSell = "";
+		String[] enteredValues = new String[3];
 
-		clearScreen();
-		System.out.println(String.format(
-				textBundle.getString("trade.insert.title"),
-				selectedStock.getSymbol()));
-		System.out.println(textBundle.getString("trade.insert.shares"));
-		shares = readConsoleLine();
-		System.out.println(textBundle.getString("trade.insert.price"));
-		price = readConsoleLine();
-		System.out.println(textBundle.getString("trade.insert.buyorsell"));
-		buyOrSell = readConsoleLine();
-
-		validateTradeInsert(shares, price, buyOrSell, errors);
+		userScreen.clearScreen();
+		enteredValues = userScreen.getTradeInput(selectedStock.getSymbol());
+		validateTradeInsert(enteredValues, errors);
 
 		if (errors.isEmpty()) {
 			Trade newTrade = new Trade();
 			newTrade.setTradeId(selectedStock.getTrades().size() + 1);
-			newTrade.setPrice(Integer.parseInt(price));
-			newTrade.setShares(Integer.parseInt(shares));
-			newTrade.setSell(Boolean.parseBoolean(buyOrSell));
+			newTrade.setShares(Integer.parseInt(enteredValues[0]));
+			newTrade.setPrice(Integer.parseInt(enteredValues[1]));
+			newTrade.setSell(Boolean.parseBoolean(enteredValues[2]));
 			selectedStock.getTrades().add(newTrade);
 			return String.format(textBundle.getString("trade.insert.ok"),
 					selectedStock.getSymbol());
 		}
 
 		if (!errors.isEmpty()) {
-			error = textBundle.getString("trade.insert.haserrors");
+			error = String.format(
+					textBundle.getString("trade.insert.haserrors"),
+					selectedStock.getSymbol());
 		}
 		for (String detectedErrors : errors) {
 			error += detectedErrors;
@@ -188,21 +183,18 @@ class SuperSimpleStocks {
 	/**
 	 * Validates the input fields for a Trade.
 	 * 
-	 * @param shares
-	 *            String The shares inserted by the user.
-	 * @param price
-	 *            String The price inserted by the user.
-	 * @param buyOrSell
-	 *            String The buy or sell indicator inserted by the user.
+	 * @param enteredValues
+	 *            String[] Holds the entered values for shares, price and buy or
+	 *            sell type.
 	 * @param errors
 	 *            List<String> List containing all the detected input errors.
 	 */
-	private static void validateTradeInsert(final String shares,
-			final String price, String buyOrSell, List<String> errors) {
+	private static void validateTradeInsert(String[] enteredValues,
+			List<String> errors) {
 		int number = 0;
 
 		try {
-			number = Integer.parseInt(shares);
+			number = Integer.parseInt(enteredValues[0]);
 			if (number < 0) {
 				errors.add(String.format(
 						textBundle.getString("trade.insert.error.shares"),
@@ -212,11 +204,11 @@ class SuperSimpleStocks {
 			errors.add(String.format(textBundle
 					.getString("trade.insert.error.shares"), String.format(
 					textBundle.getString("trade.insert.error.notvalidinput"),
-					shares)));
+					enteredValues[0])));
 		}
 
 		try {
-			number = Integer.parseInt(price);
+			number = Integer.parseInt(enteredValues[1]);
 			if (number < 0) {
 				errors.add(String.format(
 						textBundle.getString("trade.insert.error.price"),
@@ -226,32 +218,19 @@ class SuperSimpleStocks {
 			errors.add(String.format(textBundle
 					.getString("trade.insert.error.price"), String.format(
 					textBundle.getString("trade.insert.error.notvalidinput"),
-					price)));
+					enteredValues[1])));
 		}
 
-		if (buyOrSell.equalsIgnoreCase("B")) {
-			buyOrSell = "true";
-		} else if (buyOrSell.equalsIgnoreCase("S")) {
-			buyOrSell = "false";
+		if (enteredValues[2].equalsIgnoreCase("B")) {
+			enteredValues[2] = "true";
+		} else if (enteredValues[2].equalsIgnoreCase("S")) {
+			enteredValues[2] = "false";
 		} else {
 			errors.add(String.format(textBundle
 					.getString("trade.insert.error.buyorsell"), String.format(
 					textBundle.getString("trade.insert.error.notvalidinput"),
-					buyOrSell)));
+					enteredValues[2])));
 		}
-	}
-
-	/**
-	 * Reads input entered at the console line.
-	 * 
-	 * @return String A string containing the console line input.
-	 * @throws IOException
-	 *             When input can't be read of the console.
-	 */
-	private static String readConsoleLine() throws IOException {
-		BufferedReader bufferRead = new BufferedReader(new InputStreamReader(
-				System.in));
-		return bufferRead.readLine();
 	}
 
 	/**
@@ -260,29 +239,17 @@ class SuperSimpleStocks {
 	 * 
 	 * @return AbstractStock The selected Stock or null if return option is
 	 *         selected.
-	 * @throws InterruptedException
-	 *             When input can't be read of the console or screen can't be
-	 *             cleared.
-	 * @throws IOException
-	 *             When input can't be read of the console or screen can't be
-	 *             cleared.
+	 * @throws SuperSimpleStocksException
+	 *             When an exception occurs.
 	 */
-	private static AbstractStock selectStock() throws InterruptedException,
-			IOException {
+	private static AbstractStock selectStock()
+			throws SuperSimpleStocksException {
 		boolean validSelection = false;
 		String error = "";
 		while (!validSelection) {
-			clearScreen();
-			System.out.println(textBundle.getString("stock.select.title"));
-			for (int i = 0; i < stockList.size(); i++) {
-				System.out.println(i + ".- " + stockList.get(i).getSymbol());
-			}
-			if (!error.isEmpty()) {
-				System.out.println("\n" + error);
-			}
-			System.out.println("\n" + stockList.size()
-					+ textBundle.getString("stock.select.return"));
-			String input = readConsoleLine();
+			userScreen.clearScreen();
+			userScreen.showStockSelectionMenu(stockList, error);
+			String input = userScreen.readConsoleLine();
 			error = checkOptionValid(input, 0, stockList.size());
 			if (error.isEmpty()) {
 				int option = Integer.parseInt(input);
@@ -297,58 +264,14 @@ class SuperSimpleStocks {
 	}
 
 	/**
-	 * When application is launched inside an executable jar an run in console
-	 * line, this method will clean up the console screen.
-	 * 
-	 * @throws InterruptedException
-	 *             When screen can't be cleared.
-	 * @throws IOException
-	 *             When screen can't be cleared.
-	 */
-	private static void clearScreen() throws InterruptedException, IOException {
-		final String operatingSystem = System.getProperty("os.name");
-		final File jarFile = new File(SuperSimpleStocks.class
-				.getProtectionDomain().getCodeSource().getLocation().getPath());
-		boolean inJar = jarFile.isFile();
-		if (inJar) {
-			if (operatingSystem.contains("Windows")) {
-				ProcessBuilder processBuilder = new ProcessBuilder("cmd", "/c",
-						"cls");
-				processBuilder.inheritIO().start().waitFor();
-			} else {
-				Runtime.getRuntime().exec("clear");
-			}
-		}
-	}
-
-	/**
 	 * Closes the running program.
 	 * 
 	 * @param message
 	 *            String A message to show to user on closing.
 	 */
 	private static void closeProgram(final String message) {
-		System.out.println(message);
+		userScreen.printMessage(message);
 		System.exit(0);
-	}
-
-	/**
-	 * Prints out the welcome menu.
-	 */
-	private static void showWelcome() {
-		System.out.println(textBundle.getString("welcome.select.title"));
-		for (int i = 1; i <= 6; i++) {
-			System.out.println(textBundle.getString("welcome.select.option."
-					+ i));
-		}
-		if (!lastError.isEmpty()) {
-			System.out.println(lastError + "\n");
-		}
-		if (!resultMessage.isEmpty()) {
-			System.out.println(resultMessage + "\n");
-			resultMessage = "";
-		}
-		System.out.println(textBundle.getString("welcome.select.option"));
 	}
 
 	/**
